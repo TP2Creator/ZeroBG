@@ -7,12 +7,16 @@ on:
       - master
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout source code
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -24,33 +28,43 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK packages
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '9.3.1'
 
-      - name: Build production APK
+      - name: Build production debug APK
         run: gradle assembleProductionDebug
 
-      - name: Prepare APK and source ZIP
+      - name: Prepare APK
+        shell: bash
         run: |
-          APK_PATH="$(find app/build/outputs/apk -type f -name '*.apk' | grep '/production/debug/' | head -n 1)"
-          test -n "$APK_PATH"
-          cp "$APK_PATH" ZeroBG.apk
-          zip -r ZeroBG-source.zip . \
-            -x ".git/*" "*/build/*" ".gradle/*" \
-               "local.properties" "*.bak"
+          set -euo pipefail
 
-      - name: Upload ZeroBG files
+          APK_PATH="$(find app/build/outputs/apk -type f -name '*.apk' \
+            | grep '/production/debug/' | head -n 1)"
+
+          if [ -z "$APK_PATH" ]; then
+            echo "Production APK was not found."
+            find app/build/outputs/apk -type f -name '*.apk' || true
+            exit 1
+          fi
+
+          mkdir -p release
+          cp "$APK_PATH" release/ZeroBG.apk
+
+      - name: Package source ZIP
+        run: |
+          git archive --format=zip --output=release/ZeroBG-source.zip HEAD
+
+      - name: Upload APK and source ZIP
         uses: actions/upload-artifact@v4
         with:
           name: ZeroBG-downloads
-          path: |
-            ZeroBG.apk
-            ZeroBG-source.zip
+          path: release/*
           if-no-files-found: error
           retention-days: 7
